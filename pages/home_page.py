@@ -2,30 +2,19 @@ import re
 from playwright.sync_api import Page
 from .base_page import BasePage
 
-
 class HomePage(BasePage):
-    """Page Object Model for the Booking.com home page search form.
-
-    Encapsulates all interactions with the main search form:
-    currency picker, destination field, date picker,
-    occupancy configuration, and the search button.
-    """
-
     URL = "https://www.booking.com/"
 
     def __init__(self, page: Page) -> None:
         super().__init__(page)
 
     # ─── Locators ───────────────────────────────────────────────────────────
-
     @property
     def currency_button(self):
-        """Header currency picker trigger (e.g. 'GBP' button)."""
         return self.page.locator("[data-testid='header-currency-picker-trigger']")
 
     @property
     def destination_input(self):
-        """'Where are you going?' text field."""
         return self.page.locator(
             "[data-testid='destination-container'] input, "
             "input[placeholder*='going'], "
@@ -34,201 +23,240 @@ class HomePage(BasePage):
 
     @property
     def date_picker_container(self):
-        """Clickable date range area on the search form."""
         return self.page.locator("[data-testid='searchbox-dates-container']")
 
     @property
     def flexible_dates_tab(self):
-        """'I'm flexible' tab inside the date picker."""
-        return self.page.get_by_role(
-            "tab", name=re.compile(r"flexible", re.IGNORECASE)
+        return self.page.locator("button, [role='tab']").filter(
+            has_text=re.compile(r"I'm flexible|Flexible", re.IGNORECASE)
         ).first
 
     @property
-    def a_month_button(self):
-        """'A month' duration option inside the flexible date picker."""
-        return self.page.get_by_role(
-            "button", name=re.compile(r"^A month$", re.IGNORECASE)
-        )
+    def a_month_option(self):
+        """'A month' duration option (Radio button wrapper / label)."""
+        # بهترین راه: پیدا کردن تگ لیبلی که شامل متن مورد نظر است
+        return self.page.locator("label").filter(
+            has_text=re.compile(r"A month", re.IGNORECASE)
+        ).first
 
     @property
     def select_dates_button(self):
-        """'Select dates' confirmation button in the date picker."""
-        return self.page.get_by_role(
-            "button", name=re.compile(r"Select dates", re.IGNORECASE)
-        )
+        """'Select dates' confirmation button."""
+        return self.page.locator("button").filter(
+            has_text=re.compile(r"Select dates", re.IGNORECASE)
+        ).first
 
     @property
     def occupancy_config(self):
-        """Guests / rooms configuration button on the search bar."""
         return self.page.locator("[data-testid='occupancy-config']")
 
     @property
     def adults_increment_btn(self):
-        """'+' button to increase the adults count in the occupancy popup."""
-        return self.page.locator(
-            "[data-testid='occupancy-popup-adults-increment-button'], "
-            "button[aria-label='Increase number of Adults']"
-        ).first
+        """The '+' button for adults. Targets the exact parent of the hidden input."""
+        # پیدا کردن اینپوت مسافران -> برگشت به والد مستقیم با ".." -> انتخاب دومین دکمه (+)
+        return self.page.locator("input#group_adults").locator("..").locator("button").nth(1)
 
     @property
     def adults_value_element(self):
-        """Element showing the current number of adults."""
-        return self.page.locator(
-            "[data-testid='occupancy-popup-adults-value'], "
-            "[data-testid='adults'] .c-stepper__value"
-        ).first
+        """The hidden input containing the numeric count of adults."""
+        return self.page.locator("input#group_adults")
 
     @property
     def pets_toggle(self):
-        """'Travelling with pets?' checkbox / toggle."""
-        return self.page.get_by_label(
-            re.compile(r"Travelling with pets", re.IGNORECASE)
-        )
+        """The toggle/checkbox for traveling with pets."""
+        # طبق کد ارسالی شما، id این چک‌باکس دقیقا "pets" است
+        return self.page.locator("input#pets")
 
     @property
     def done_button(self):
-        """'Done' button that closes the occupancy popup."""
         return self.page.get_by_role("button", name="Done")
 
     @property
     def search_button(self):
-        """Main 'Search' button that submits the form."""
-        return self.page.locator("[data-testid='searchbox-submit-button']")
+        return self.page.locator("button[type='submit']").first
 
     # ─── Actions ────────────────────────────────────────────────────────────
-
     def open(self) -> None:
-        """Open Booking.com and handle the cookie consent banner."""
         self.navigate_to(self.URL)
+        self.page.wait_for_timeout(3000) 
         self._accept_cookie_consent()
+        self._close_genius_popup()
+        self.page.keyboard.press("Escape")
 
     def _accept_cookie_consent(self) -> None:
-        """Click 'Accept' on the cookie banner if it appears."""
         try:
-            btn = self.page.get_by_role(
-                "button", name=re.compile(r"accept", re.IGNORECASE)
+            btn = self.page.locator(
+                "#onetrust-accept-btn-handler, "
+                "button[data-testid='cookie-banner-accept-button'], "
+                "button:has-text('Accept')"
             ).first
-            if btn.is_visible(timeout=4_000):
-                btn.click()
+            btn.wait_for(state="visible", timeout=8000)
+            btn.click(force=True)
+            self.page.wait_for_timeout(1000)
         except Exception:
-            pass  # Banner was not present
+            pass 
 
-    # --- Currency -------------------------------------------------------
+    def _close_genius_popup(self) -> None:
+        close_selectors = [
+            "button[aria-label='Dismiss sign in information.']",
+            "button[aria-label='Dismiss sign-in info.']",
+            "button[aria-label='Close']",
+            "[data-testid='modal-close-button']",
+            ".bui-modal__close",
+        ]
+        for selector in close_selectors:
+            try:
+                btn = self.page.locator(selector).first
+                btn.wait_for(state="visible", timeout=2000)
+                btn.click(force=True)
+                self.page.wait_for_timeout(500)
+                return  
+            except Exception:
+                continue
 
+    # --- Currency ---
     def click_currency_button(self) -> None:
-        """Open the currency picker dialog."""
         self.currency_button.wait_for(state="visible", timeout=10_000)
         self.currency_button.click()
 
     def select_currency(self, currency_code: str) -> None:
-        """Choose a currency from the dialog by its code (e.g. 'TRY').
-
-        Args:
-            currency_code: Three-letter ISO currency code shown in the dialog.
-        """
-        self.page.wait_for_selector(
-            f"text={currency_code}", state="visible", timeout=10_000
-        )
+        # منتظر ماندن برای لود شدن کل مودال ارزها
+        self.page.locator("[data-testid='selection-item']").first.wait_for(state="visible", timeout=10000)
         try:
-            self.page.locator(
-                f"[data-testid='selection-item']:has-text('{currency_code}')"
-            ).first.click()
+            btn = self.page.locator(f"[data-testid='selection-item']:has-text('{currency_code}')").first
+            btn.scroll_into_view_if_needed() # اسکرول کردن به سمت لیر (TRY)
+            btn.click(force=True)
         except Exception:
-            # Fallback: find any element whose text exactly matches the code
-            self.page.get_by_text(currency_code, exact=True).first.click()
+            fallback = self.page.locator(f"button:has-text('{currency_code}'), span:has-text('{currency_code}')").first
+            fallback.scroll_into_view_if_needed()
+            fallback.click(force=True)
 
-    # --- Destination ---------------------------------------------------
-
+    # --- Destination ---
     def fill_destination(self, destination: str) -> None:
-        """Type a destination into the search field.
-
-        Args:
-            destination: Free-text destination (e.g. 'London').
+        """Type the destination safely by manually clearing the field first."""
+        self.destination_input.wait_for(state="visible")
+        self.destination_input.click(force=True)
         """
-        self.destination_input.wait_for(state="visible", timeout=10_000)
-        self.destination_input.click()
-        self.destination_input.fill(destination)
+        ### پاک کردن مطمئن و واقعی فیلد با شبیه‌سازی کیبورد
+        self.page.keyboard.press("Control+A")
+        self.page.keyboard.press("Backspace")
+        self.page.wait_for_timeout(500)
+        """
+        # تایپ کلمه جدید
+        self.destination_input.press_sequentially(destination, delay=150)
+        self.page.wait_for_timeout(2000)
 
-    def select_first_autocomplete_suggestion(self) -> None:
-        """Wait for the autocomplete dropdown and click the first result."""
-        first_result = self.page.locator(
-            "[data-testid='autocomplete-result'], "
-            "li[data-testid='autocomplete-result']"
+    def select_first_autocomplete_suggestion(self, destination: str) -> None:
+        """Type destination slowly and wait for accurate network response before clicking."""
+        
+        suggestion = self.page.locator(
+            f"[data-testid='autocomplete-result']:has-text('{destination}')"
         ).first
-        first_result.wait_for(state="visible", timeout=10_000)
-        first_result.click()
-
-    # --- Dates ---------------------------------------------------------
-
+        
+  
+        suggestion.wait_for(state="visible", timeout=10000)
+        suggestion.click(force=True)
+            
+            # یک مکث کوتاه برای اینکه سایت متوجه کلیک شود و تقویم را باز کند
+        self.page.wait_for_timeout(2000)
+            
+    # --- Dates ---
     def open_date_picker(self) -> None:
-        """Click on the date range area to open the date picker."""
-        self.date_picker_container.click()
+        # اگر تقویم خودکار باز شده، دیگر روی آن کلیک نکن
+        if self.flexible_dates_tab.is_visible():
+            return
+        try:
+            self.flexible_dates_tab.wait_for(state="visible", timeout=3000)
+        except Exception:
+            self.date_picker_container.click(force=True)
+            self.flexible_dates_tab.wait_for(state="visible", timeout=5000)
 
     def click_flexible_dates(self) -> None:
-        """Switch the date picker to the 'I'm flexible' mode."""
-        self.flexible_dates_tab.wait_for(state="visible", timeout=10_000)
-        self.flexible_dates_tab.click()
+        self.flexible_dates_tab.wait_for(state="visible", timeout=5000)
+        self.flexible_dates_tab.click(force=True)
 
     def select_a_month_duration(self) -> None:
-        """Pick 'A month' as the trip duration under flexible dates."""
-        self.a_month_button.wait_for(state="visible", timeout=10_000)
-        self.a_month_button.click()
+        """Select 'A month' duration option using label click or radio check."""
+        try:
+            # تلاش اول: کلیک روی لیبل گرافیکی متصل به رادیو باتن
+            self.a_month_option.wait_for(state="visible", timeout=8000)
+            self.a_month_option.click(force=True)
+        except Exception:
+            # روش جایگزین: پیدا کردن مستقیم خود رادیو باتن و استفاده از متد check()
+            radio_btn = self.page.get_by_role("radio", name=re.compile(r"A month", re.IGNORECASE)).first
+            # از state="attached" استفاده می‌کنیم چون ممکن است رادیو باتن در پس‌زمینه مخفی باشد
+            radio_btn.wait_for(state="attached", timeout=5000)
+            radio_btn.check(force=True)
 
     def select_month(self, month_year: str) -> None:
-        """Click a specific month in the flexible month selector.
-
-        Args:
-            month_year: Month and year label as shown on the button,
-                        e.g. 'Jun 2025' or 'June 2025'.
-
-        Note:
-            Booking.com only shows future months. If the specified month
-            is in the past, update this value to an upcoming month.
-        """
-        self.page.get_by_role(
-            "button", name=re.compile(month_year, re.IGNORECASE)
-        ).click()
-
+        """Select the specified month in the flexible dates view based on explicit DOM structure."""
+        
+        # استخراج هوشمندِ نام ماه و سال (تبدیل "July 2026" به "Jul" و "2026")
+        parts = month_year.split()
+        short_month = parts[0][:3]  # سه حرف اول ماه
+        year = parts[-1]            # عدد سال
+        
+        # استفاده از data-testid خالصی که از HTML استخراج کردید
+        # رجکس {short_month}.*{year} یعنی مثلا هرجا نوشت Jul بعدش هرچیزی بود بعدش 2026 بود
+        month_label = self.page.locator("[data-testid='flexible-dates-month']").filter(
+            has_text=re.compile(f"{short_month}.*{year}", re.IGNORECASE)
+        ).first
+        
+        try:
+            month_label.wait_for(state="visible", timeout=8000)
+            month_label.scroll_into_view_if_needed()
+            # چون تگ اینپوت (چک‌باکس) داخل لیبل پنهان است، کلیک کردن مستقیم روی لیبل امن‌ترین کار است
+            month_label.click(force=True)
+        except Exception:
+            # روش جایگزین در صورت تغییرات احتمالی DOM
+            fallback = self.page.locator(f"label:has-text('{short_month}'):has-text('{year}')").first
+            fallback.scroll_into_view_if_needed()
+            fallback.click(force=True)
+            
     def click_select_dates(self) -> None:
-        """Click 'Select dates' to confirm the date selection."""
-        self.select_dates_button.wait_for(state="visible", timeout=10_000)
-        self.select_dates_button.click()
+       
+            # حداکثر ۳ ثانیه منتظر می‌ماند
+            self.select_dates_button.wait_for(state="visible", timeout=3000)
+            self.select_dates_button.click(force=True)
+            self.page.wait_for_timeout(500)
 
-    # --- Occupancy (Guests) --------------------------------------------
-
+    # --- Occupancy ---
     def open_occupancy_picker(self) -> None:
-        """Open the guests / rooms configuration popup."""
-        self.occupancy_config.wait_for(state="visible", timeout=10_000)
-        self.occupancy_config.click()
+        self.occupancy_config.wait_for(state="visible")
+        self.occupancy_config.click(force=True)
 
     def set_adults_count(self, target_count: int) -> None:
-        """Increase the number of adults to the desired value.
-
-        Args:
-            target_count: Desired number of adults (e.g. 8).
-                          Default on booking.com is 2.
-        """
-        current_text = self.adults_value_element.text_content(timeout=5_000)
-        current = int(current_text.strip())
-        for _ in range(target_count - current):
-            self.adults_increment_btn.click()
-            self.page.wait_for_timeout(300)
+        """Click the '+' button until the target adults count is reached."""
+        # چون اینپوت مخفی (type="range") است، باید از attached به جای visible استفاده کنیم
+        self.adults_value_element.wait_for(state="attached", timeout=5000)
+        
+        # خواندن مقدار عددی دقیق از اتریبیوت value
+        current_str = self.adults_value_element.get_attribute("value")
+        current = int(current_str)
+        
+        while current < target_count:
+            self.adults_increment_btn.click(force=True)
+            self.page.wait_for_timeout(300)  # مکث طبیعی بین کلیک‌ها
+            
+            # آپدیت کردن مقدار متغیر در هر بار چرخش حلقه
+            current_str = self.adults_value_element.get_attribute("value")
+            current = int(current_str)
 
     def enable_travelling_with_pets(self) -> None:
-        """Enable the 'Travelling with pets?' option."""
-        self.pets_toggle.wait_for(state="visible", timeout=10_000)
+        """Turn on the 'Traveling with pets' switch."""
+        # چک‌باکس حیوانات با CSS مخفی شده و به جای آن یک سوییچ گرافیکی دیده می‌شود، پس از label استفاده می‌کنیم
+        pet_label = self.page.locator("label[for='pets']")
+        pet_label.wait_for(state="visible", timeout=5000)
+        
+        # چک می‌کنیم اگر خود چک‌باکس مخفی تیک نخورده است، روی لیبل کلیک کنیم
         if not self.pets_toggle.is_checked():
-            self.pets_toggle.click()
+            pet_label.click(force=True)
 
     def click_done(self) -> None:
-        """Close the occupancy popup."""
-        self.done_button.wait_for(state="visible", timeout=5_000)
-        self.done_button.click()
+        self.done_button.wait_for(state="visible")
+        self.done_button.click(force=True)
 
-    # --- Search --------------------------------------------------------
-
+    # --- Search ---
     def click_search(self) -> None:
-        """Submit the search form."""
-        self.search_button.wait_for(state="visible", timeout=10_000)
-        self.search_button.click()
+        self.search_button.wait_for(state="visible")
+        self.search_button.click(force=True)

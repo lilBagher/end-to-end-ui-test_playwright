@@ -1,4 +1,4 @@
-from playwright.sync_api import Page
+from playwright.sync_api import Page  # type: ignore[import]
 
 
 class BasePage:
@@ -12,8 +12,8 @@ class BasePage:
 
     def navigate_to(self, url: str) -> None:
         """Navigate to a URL and wait for the page to be ready."""
-        self.page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-        self.page.wait_for_load_state("networkidle", timeout=30_000)
+        self.page.goto(url, wait_until="domcontentloaded", timeout=90_000)
+        #self.page.wait_for_load_state("networkidle", timeout=30_000)
 
     def take_screenshot(self, filename: str) -> None:
         """Save a screenshot for debugging purposes."""
