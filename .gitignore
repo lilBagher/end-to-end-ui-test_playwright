@@ -1951,3 +1951,17 @@ pages/__pycache__/__init__.cpython-312.pyc
 __pycache__/conftest.cpython-314-pytest-9.0.2.pyc
 __pycache__/conftest.cpython-312-pytest-8.2.0.pyc
 .vscode/settings.json
+screenshots/FAIL_test_booking_search_flow\[chromium]_1781496146.png
+screenshots/FAIL_test_booking_search_flow\[chromium]_1781496236.png
+screenshots/FAIL_test_booking_search_flow\[chromium]_1781496437.png
+screenshots/FAIL_test_booking_search_flow\[chromium]_1781498346.png
+screenshots/FAIL_test_booking_search_flow\[chromium]_1781498534.png
+screenshots/FAIL_test_booking_search_flow\[chromium]_1781501185.png
+screenshots/FAIL_test_booking_search_flow\[chromium]_1781502207.png
+screenshots/FAIL_test_booking_search_flow\[chromium]_1781502864.png
+screenshots/FAIL_test_booking_search_flow\[chromium]_1781503445.png
+screenshots/FAIL_test_booking_search_flow\[chromium]_1781504036.png
+screenshots/FAIL_test_booking_search_flow\[chromium]_1781505686.png
+.gitignore
+utils/__pycache__/retry.cpython-312.pyc
+utils/__pycache__/__init__.cpython-312.pyc

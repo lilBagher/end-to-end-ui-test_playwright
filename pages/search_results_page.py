@@ -1,53 +1,73 @@
-import re
-from playwright.sync_api import Page
+import logging
+
+from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError
+
 from .base_page import BasePage
+from utils.retry import retry
+
+logger = logging.getLogger(__name__)
+
 
 class SearchResultsPage(BasePage):
-    """Page Object Model for the Booking.com search results page."""
+    """Page Object برای صفحه نتایج جستجو."""
+
+    POPUP_SELECTORS = [
+        "button[aria-label='Dismiss sign in info.']",
+        "button[aria-label='Dismiss sign in information.']",
+        "[data-testid='modal-close-button']",
+        "button:has-text('Close')",
+        "button:has-text('Sign in')",
+        "button:has-text('Not now')",
+    ]
 
     def __init__(self, page: Page) -> None:
         super().__init__(page)
 
     @property
-    def hotel_cards(self):
-        return self.page.locator("[data-testid='property-card']")
-
-    @property
     def see_availability_buttons(self):
+        # سلکتور ترکیبی مقاوم در برابر A/B Testing
         return self.page.locator(
-            "[data-testid='availability-cta-btn'], "
-            "a[data-testid='availability-cta-btn']"
+            "a:has-text('See availability'), "
+            "button:has-text('See availability'), "
+            "a:has-text('See Availability'), "
+            "button:has-text('See Availability'), "
+            "[data-testid='availability-cta-btn']"
         )
 
-    def wait_for_results(self, timeout: int = 90_000) -> None:
-        self.hotel_cards.first.wait_for(state="visible", timeout=timeout)
+    def wait_for_results(self, timeout: int = 60_000) -> None:
+        """منتظر لود شدن اولین دکمه availability."""
+        try:
+            self.see_availability_buttons.first.wait_for(state="attached", timeout=timeout)
+        except PlaywrightTimeoutError:
+            # هیچ هتلی تطابق ندارد (مثلاً 8 مسافر در 1 اتاق)
+            raise IndexError("صفحه نتایج لود شد اما هیچ هتلی با این معیارها پیدا نشد.")
 
-    def close_popup_if_visible(self) -> None:
-        close_selectors = [
-            "button[aria-label='Dismiss sign in info.']",
-            "button[aria-label='Close']",
-            "[data-testid='modal-close-button']",
-            "button:has-text('Close')",
-        ]
-        for selector in close_selectors:
-            try:
-                btn = self.page.locator(selector).first
-                if btn.is_visible(timeout=4_000):
-                    btn.click(force=True)
-                    self.page.wait_for_timeout(1000)
-                    return
-            except Exception:
-                continue
+        self.dismiss_popups()
 
+    @retry(max_attempts=3, delay=2.0)
     def click_nth_hotel_availability(self, index: int = 3) -> None:
-        self.close_popup_if_visible()
-    
-        # اول کارت هتل مورد نظر را پیدا می‌کند و صفحه را تا آنجا اسکرول می‌کند
-        target_card = self.hotel_cards.nth(index - 1)
-        target_card.wait_for(state="visible", timeout=30_000)
-        target_card.scroll_into_view_if_needed()
-        self.page.wait_for_timeout(1000) # اجازه می‌دهیم انیمیشن اسکرول تمام شود
-        
-        # سپس روی دکمه آن کلیک می‌کند
+        """روی دکمه 'See availability' هتل n‌ام کلیک کن."""
+        self.dismiss_popups()
+
+        # اسکرول برای لود کردن نتایج بیشتر
+        for _ in range(8):
+            if self.see_availability_buttons.count() >= index:
+                break
+            self.page.keyboard.press("PageDown")
+            self.page.wait_for_timeout(1000)
+
+        available_count = self.see_availability_buttons.count()
+
+        if available_count < index:
+            raise IndexError(f"{available_count} هتل پیدا شد اما هتل #{index} درخواست شد.")
+
         btn = self.see_availability_buttons.nth(index - 1)
+
+        # اسکرول به وسط صفحه با انیمیشن
+        btn.evaluate("node => node.scrollIntoView({behavior: 'smooth', block: 'center'})")
+        self.page.wait_for_timeout(1500)
+
+        self.dismiss_popups()
+
+        # کلیک نهایی
         btn.click(force=True)
